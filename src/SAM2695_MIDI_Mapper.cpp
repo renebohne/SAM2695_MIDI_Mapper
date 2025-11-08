@@ -11,15 +11,15 @@ SAM2695_MIDI_Mapper::SAM2695_MIDI_Mapper(MIDI_Interface &synthInterface)
     currentProgram[i] = 0;
   }
 
-  // Explicitly initialize each member of the struct
-  m_callbacks.onNoteOn = onNoteOn;
-  m_callbacks.onNoteOff = onNoteOff;
-  m_callbacks.onAfterTouchPoly = onAfterTouchPoly;
-  m_callbacks.onControlChange = onControlChange;
-  m_callbacks.onProgramChange = onProgramChange;
-  m_callbacks.onAfterTouchChannel = onAfterTouchChannel;
-  m_callbacks.onPitchBend = onPitchBend;
-  m_callbacks.onSysEx = onSysEx;
+  // --- FIX 1: Use the correct member names (e.g., "noteOn" instead of "onNoteOn") ---
+  m_callbacks.noteOn = onNoteOn;
+  m_callbacks.noteOff = onNoteOff;
+  m_callbacks.afterTouchPoly = onAfterTouchPoly;
+  m_callbacks.controlChange = onControlChange;
+  m_callbacks.programChange = onProgramChange;
+  m_callbacks.afterTouchChannel = onAfterTouchChannel;
+  m_callbacks.pitchBend = onPitchBend;
+  m_callbacks.sysEx = onSysEx;
 }
 
 void SAM2695_MIDI_Mapper::begin() {
@@ -39,13 +39,16 @@ MIDI_Callbacks &SAM2695_MIDI_Mapper::getCallbacks() {
 void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byte value) {
   // Use 1-based channel for all Control-Surface send functions
   byte midiChannel = channel + 1;
+  
+  // --- FIX 2: Explicitly cast the channel byte to cs::Channel ---
+  cs::Channel channelType = cs::Channel(midiChannel);
 
   switch (controller) {
     // --- NEW BANK-SELECT LOGIC ---
     case 32: // Bank Select LSB (Ableton-style)
-      // FIX: Explicitly construct MIDIAddress
-      if (value == 0)      synth->sendControlChange(cs::MIDIAddress(0, midiChannel), 0);  // Bank 1 -> GM
-      else if (value == 1) synth->sendControlChange(cs::MIDIAddress(0, midiChannel), 127); // Bank 2 -> MT-32
+      // FIX 2: Explicitly construct MIDIAddress with cs::MIDIChannelCable
+      if (value == 0)      synth->sendControlChange(cs::MIDIAddress(0, cs::MIDIChannelCable(channelType)), 0);  // Bank 1 -> GM
+      else if (value == 1) synth->sendControlChange(cs::MIDIAddress(0, cs::MIDIChannelCable(channelType)), 127); // Bank 2 -> MT-32
       break; 
       
     case 0:  // Bank Select MSB (is blocked)
@@ -60,8 +63,8 @@ void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byt
         } else {
           currentProgram[channel] = 127; // Wrap around
         }
-        // FIX: Use MIDIChannelCable for Program Change
-        synth->sendProgramChange(cs::MIDIChannelCable(midiChannel), currentProgram[channel]);
+        // FIX 2: Explicitly construct MIDIChannelCable
+        synth->sendProgramChange(cs::MIDIChannelCable(channelType), currentProgram[channel]);
       }
       break;
     case 15: // Program Increment
@@ -71,8 +74,8 @@ void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byt
         } else {
           currentProgram[channel] = 0; // Wrap around
         }
-        // FIX: Use MIDIChannelCable for Program Change
-        synth->sendProgramChange(cs::MIDIChannelCable(midiChannel), currentProgram[channel]);
+        // FIX 2: Explicitly construct MIDIChannelCable
+        synth->sendProgramChange(cs::MIDIChannelCable(channelType), currentProgram[channel]);
       }
       break;
 
@@ -157,8 +160,8 @@ void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byt
     // --- DEFAULT: Normal Passthrough ---
     default:
       // Forward all other CCs (Volume, Pan, Sustain etc.) 1:1.
-      // FIX: Explicitly construct MIDIAddress
-      synth->sendControlChange(cs::MIDIAddress(controller, midiChannel), value);
+      // FIX 2: Explicitly construct MIDIAddress
+      synth->sendControlChange(cs::MIDIAddress(controller, cs::MIDIChannelCable(channelType)), value);
       break;
   }
 }
@@ -166,35 +169,31 @@ void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byt
 // --- Passthrough for all other MIDI messages ---
 
 void SAM2695_MIDI_Mapper::handleNoteOn(byte channel, byte note, byte velocity) {
-  // FIX: Explicitly construct MIDIAddress
-  synth->sendNoteOn(cs::MIDIAddress(note, channel + 1), velocity);
+  // FIX 2: Explicitly construct MIDIAddress
+  synth->sendNoteOn(cs::MIDIAddress(note, cs::MIDIChannelCable(cs::Channel(channel + 1))), velocity);
 }
 void SAM2695_MIDI_Mapper::handleNoteOff(byte channel, byte note, byte velocity) {
-  // FIX: Explicitly construct MIDIAddress
-  synth->sendNoteOff(cs::MIDIAddress(note, channel + 1), velocity);
+  // FIX 2: Explicitly construct MIDIAddress
+  synth->sendNoteOff(cs::MIDIAddress(note, cs::MIDIChannelCable(cs::Channel(channel + 1))), velocity);
 }
 void SAM2695_MIDI_Mapper::handleProgramChange(byte channel, byte program) {
-  // NEW: Update our internal state
   currentProgram[channel] = program;
-  
-  // Just forward Program Change. The bank was
-  // already set by the CC 32 message.
-  // FIX: Use MIDIChannelCable for Program Change
-  synth->sendProgramChange(cs::MIDIChannelCable(channel + 1), program);
+  // FIX 2: Explicitly construct MIDIChannelCable
+  synth->sendProgramChange(cs::MIDIChannelCable(cs::Channel(channel + 1)), program);
 }
 
 void SAM2695_MIDI_Mapper::handlePitchBend(byte channel, int bend) {
-  // FIX: Use MIDIChannelCable and convert signed to unsigned
+  // FIX 2 & 4: Use MIDIChannelCable and convert signed to unsigned
   uint16_t unsignedBend = bend + 8192;
-  synth->sendPitchBend(cs::MIDIChannelCable(channel + 1), unsignedBend);
+  synth->sendPitchBend(cs::MIDIChannelCable(cs::Channel(channel + 1)), unsignedBend);
 }
 void SAM2695_MIDI_Mapper::handleAfterTouchPoly(byte channel, byte note, byte pressure) {
-  // FIX: Correct function name and use explicit MIDIAddress
-  synth->sendPolyphonicAftertouch(cs::MIDIAddress(note, channel + 1), pressure);
+  // FIX 2 & 3: Correct function name and use explicit MIDIAddress
+  synth->sendKeyPressure(cs::MIDIAddress(note, cs::MIDIChannelCable(cs::Channel(channel + 1))), pressure);
 }
 void SAM2695_MIDI_Mapper::handleAfterTouchChannel(byte channel, byte pressure) {
-  // FIX: Correct function name and use explicit MIDIChannelCable
-  synth->sendChannelPressure(cs::MIDIChannelCable(channel + 1), pressure);
+  // FIX 2: Explicitly construct MIDIChannelCable
+  synth->sendChannelPressure(cs::MIDIChannelCable(cs::Channel(channel + 1)), pressure);
 }
 void SAM2695_MIDI_Mapper::handleSysEx(const byte *data, size_t length) {
   // Pass through any SysEx messages
@@ -208,14 +207,16 @@ void SAM2695_MIDI_Mapper::handleSysEx(const byte *data, size_t length) {
 
 void SAM2695_MIDI_Mapper::sendNRPN(byte channel, uint16_t parameter, byte value) {
   byte midiChannel = channel + 1; // 1-based channels
+  cs::Channel channelType = cs::Channel(midiChannel);
   byte param_msb = (parameter >> 7) & 0x7F; // Split parameter number
   byte param_lsb = parameter & 0x7F;
-  // FIX: Explicitly construct MIDIAddress
-  synth->sendControlChange(cs::MIDIAddress(99, midiChannel), param_msb);
-  synth->sendControlChange(cs::MIDIAddress(98, midiChannel), param_lsb);
-  synth->sendControlChange(cs::MIDIAddress(6, midiChannel), value);
-  synth->sendControlChange(cs::MIDIAddress(99, midiChannel), 0x7F); // "Null-terminate" NRPN
-  synth->sendControlChange(cs::MIDIAddress(98, midiChannel), 0x7F);
+  
+  // FIX 2: Explicitly construct MIDIAddress
+  synth->sendControlChange(cs::MIDIAddress(99, cs::MIDIChannelCable(channelType)), param_msb);
+  synth->sendControlChange(cs::MIDIAddress(98, cs::MIDIChannelCable(channelType)), param_lsb);
+  synth->sendControlChange(cs::MIDIAddress(6, cs::MIDIChannelCable(channelType)), value);
+  synth->sendControlChange(cs::MIDIAddress(99, cs::MIDIChannelCable(channelType)), 0x7F); // "Null-terminate" NRPN
+  synth->sendControlChange(cs::MIDIAddress(98, cs::MIDIChannelCable(channelType)), 0x7F);
 }
 
 void SAM2695_MIDI_Mapper::sendSysEx(const byte *data, size_t length) {

@@ -29,12 +29,13 @@ public:
   /**
    * @brief Gets the callback structure to be attached to the MIDI input
    * interface (e.g., BLE-MIDI).
-   * @return A reference to the MIDI_Callbacks structure.
+   * @return A reference to the FineGrainedMIDI_Callbacks structure.
    */
-  MIDI_Callbacks &getCallbacks();
+  FineGrainedMIDI_Callbacks<SAM2695_MIDI_Mapper> &getCallbacks();
 
-private:
-  // ----- Private Methods (Handlers) -----
+  // ----- Public Callback Handlers -----
+  // These are public so the FineGrainedMIDI_Callbacks struct can call them.
+  // They are the actual implementation of the MIDI handlers.
   void handleNoteOn(byte channel, byte note, byte velocity);
   void handleNoteOff(byte channel, byte note, byte velocity);
   void handleControlChange(byte channel, byte controller, byte value);
@@ -44,6 +45,7 @@ private:
   void handleAfterTouchChannel(byte channel, byte pressure);
   void handleSysEx(const byte *data, size_t length);
 
+private:
   // ----- Private Methods (Helpers) -----
   void sendNRPN(byte channel, uint16_t parameter, byte value);
   void sendSysEx(const byte *data, size_t length);
@@ -54,18 +56,9 @@ private:
   MIDI_Interface *synth; // Pointer to the SAM2695 interface
   byte effectModuleState; // "Shadow-State" for NRPN 375Fh
   byte currentProgram[16]; // Stores the current program (0-127) for each channel
-  MIDI_Callbacks m_callbacks; // Store the callbacks struct as a member
-
-  // ----- Static Members for C-Style Callbacks -----
-  static SAM2695_MIDI_Mapper *instance;
-  static void onNoteOn(byte c, byte n, byte v) { if (instance) instance->handleNoteOn(c, n, v); }
-  static void onNoteOff(byte c, byte n, byte v) { if (instance) instance->handleNoteOff(c, n, v); }
-  static void onControlChange(byte c, byte cn, byte v) { if (instance) instance->handleControlChange(c, cn, v); }
-  static void onProgramChange(byte c, byte p) { if (instance) instance->handleProgramChange(c, p); }
-  static void onPitchBend(byte c, int b) { if (instance) instance->handlePitchBend(c, b); }
-  static void onAfterTouchPoly(byte c, byte n, byte p) { if (instance) instance->handleAfterTouchPoly(c, n, p); }
-  static void onAfterTouchChannel(byte c, byte p) { if (instance) instance->handleAfterTouchChannel(c, p); }
-  static void onSysEx(const byte *d, size_t l) { if (instance) instance->handleSysEx(d, l); }
+  
+  // Use the correct, class-based callback structure
+  FineGrainedMIDI_Callbacks<SAM2695_MIDI_Mapper> m_callbacks; 
 };
 
 #endif

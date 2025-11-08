@@ -31,7 +31,7 @@ public:
    * interface (e.g., BLE-MIDI).
    * @return A reference to the MIDI_Callbacks structure.
    */
-  MIDI_Callbacks &getCallbacks(); // CHANGED: Return by reference (&)
+  MIDI_Callbacks &getCallbacks();
 
 private:
   // ----- Private Methods (Handlers) -----
@@ -54,7 +54,7 @@ private:
   MIDI_Interface *synth; // Pointer to the SAM2695 interface
   byte effectModuleState; // "Shadow-State" for NRPN 375Fh
   byte currentProgram[16]; // Stores the current program (0-127) for each channel
-  MIDI_Callbacks m_callbacks; // NEW: Store the callbacks struct as a member
+  MIDI_Callbacks m_callbacks; // Store the callbacks struct as a member
 
   // ----- Static Members for C-Style Callbacks -----
   static SAM2695_MIDI_Mapper *instance;

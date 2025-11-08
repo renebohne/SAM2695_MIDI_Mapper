@@ -11,25 +11,23 @@ SAM2695_MIDI_Mapper::SAM2695_MIDI_Mapper(MIDI_Interface &synthInterface)
     currentProgram[i] = 0;
   }
 
-  // NEW: Initialize the member callback struct
-  m_callbacks = {
-    onNoteOn,
-    onNoteOff,
-    onAfterTouchPoly,
-    onControlChange,
-    onProgramChange,
-    onAfterTouchChannel,
-    onPitchBend,
-    onSysEx
-  };
+  // Explicitly initialize each member of the struct
+  m_callbacks.onNoteOn = onNoteOn;
+  m_callbacks.onNoteOff = onNoteOff;
+  m_callbacks.onAfterTouchPoly = onAfterTouchPoly;
+  m_callbacks.onControlChange = onControlChange;
+  m_callbacks.onProgramChange = onProgramChange;
+  m_callbacks.onAfterTouchChannel = onAfterTouchChannel;
+  m_callbacks.onPitchBend = onPitchBend;
+  m_callbacks.onSysEx = onSysEx;
 }
 
 void SAM2695_MIDI_Mapper::begin() {
-  // Synchronize the ESP32 status with the chip on startup
+  // Send the initial effect module state to the chip
+  // to ensure it's in sync with our shadow state.
   updateEffectModules();
 }
 
-// CHANGED: Return a reference to the member variable
 MIDI_Callbacks &SAM2695_MIDI_Mapper::getCallbacks() {
   return m_callbacks; 
 }
@@ -39,38 +37,42 @@ MIDI_Callbacks &SAM2695_MIDI_Mapper::getCallbacks() {
 // ==================================================================
 
 void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byte value) {
+  // Use 1-based channel for all Control-Surface send functions
+  byte midiChannel = channel + 1;
+
   switch (controller) {
     // --- NEW BANK-SELECT LOGIC ---
     case 32: // Bank Select LSB (Ableton-style)
-      if (value == 0)      synth->sendControlChange({0, channel + 1}, 0);  // Bank 1 -> GM
-      else if (value == 1) synth->sendControlChange({0, channel + 1}, 127); // Bank 2 -> MT-32
-      // Add "else if (value == 2)" etc. here if needed
-      break; // IMPORTANT: Do not forward CC 32 to the SAM
+      // FIX: Explicitly construct MIDIAddress
+      if (value == 0)      synth->sendControlChange(cs::MIDIAddress(0, midiChannel), 0);  // Bank 1 -> GM
+      else if (value == 1) synth->sendControlChange(cs::MIDIAddress(0, midiChannel), 127); // Bank 2 -> MT-32
+      break; 
       
     case 0:  // Bank Select MSB (is blocked)
-      // IMPORTANT: Block this. We are now controlling CC 0 manually via CC 32.
+      // We block CC 0 because we handle banks via CC 32.
       break; 
 
     // --- NEW PROGRAM INC/DEC ---
-    // We treat these as "button presses", triggering on any value >= 64
     case 14: // Program Decrement
-      if (value >= 64) {
+      if (value >= 64) { // Trigger on value >= 64 (button press)
         if (currentProgram[channel] > 0) {
           currentProgram[channel]--;
         } else {
           currentProgram[channel] = 127; // Wrap around
         }
-        synth->sendProgramChange({channel + 1}, currentProgram[channel]);
+        // FIX: Use MIDIChannelCable for Program Change
+        synth->sendProgramChange(cs::MIDIChannelCable(midiChannel), currentProgram[channel]);
       }
       break;
     case 15: // Program Increment
-      if (value >= 64) {
+      if (value >= 64) { // Trigger on value >= 64 (button press)
         if (currentProgram[channel] < 127) {
           currentProgram[channel]++;
         } else {
           currentProgram[channel] = 0; // Wrap around
         }
-        synth->sendProgramChange({channel + 1}, currentProgram[channel]);
+        // FIX: Use MIDIChannelCable for Program Change
+        synth->sendProgramChange(cs::MIDIChannelCable(midiChannel), currentProgram[channel]);
       }
       break;
 
@@ -79,7 +81,7 @@ void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byt
     case 17: sendNRPN(channel, 0x3724, value); break; // Map CC 17 -> Mike Volume (NRPN 3724h)
     case 18: sendNRPN(channel, 0x3720, value); break; // Map CC 18 -> Spatial Volume (NRPN 3720h)
       
-    // --- MICROPHONE-ECHO MAPPINGS ---
+    // --- MICROPHONE ECHO MAPPINGS ---
     case 20: sendNRPN(channel, 0x3728, value); break; // Map CC 20 -> Mike Echo Level (NRPN 3728h)
     case 21: sendNRPN(channel, 0x3729, value); break; // Map CC 21 -> Mike Echo Time (NRPN 3729h)
     case 22: sendNRPN(channel, 0x372A, value); break; // Map CC 22 -> Mike Echo Feedback (NRPN 372Ah)
@@ -97,7 +99,7 @@ void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byt
     case 30: sendNRPN(channel, 0x370A, value); break; // Map CC 30 -> EQ Med High Freq (NRPN 370Ah)
     case 31: sendNRPN(channel, 0x370B, value); break; // Map CC 31 -> EQ High Freq (NRPN 370Bh)
 
-    // --- SPATIAL 3D-EFFECT MAPPINGS ---
+    // --- SPATIAL 3D EFFECT MAPPINGS ---
     case 34: sendNRPN(channel, 0x372C, value); break; // Map CC 34 -> Spatial Delay (NRPN 372Ch)
     case 35: sendNRPN(channel, 0x372D, value); break; // Map CC 35 -> Spatial Input (0=Stereo, 127=Mono) (NRPN 372Dh)
 
@@ -123,7 +125,7 @@ void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byt
       bitWrite(effectModuleState, 6, value >= 64);
       updateEffectModules();
       break;
-    case 41: // EQ Mode (Bits 0, 1)
+    case 41: // EQ Modus (Bits 0, 1)
       if (value < 43) { // 0-42: EQ OFF
         bitWrite(effectModuleState, 1, 0); bitWrite(effectModuleState, 0, 0);
       } else if (value < 86) { // 43-85: 2-Band EQ ON
@@ -143,7 +145,7 @@ void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byt
 
     // --- HARDWARE-LEVEL SYSEX ---
     case 47: // Map CC 47 -> Mic Boost (+20dB) (On >= 64, Off < 64)
-      if (value >= 64) { // Mic Boost ON (Section 6, p. 36)
+      if (value >= 64) { // Mic Boost ON (See Datasheet Sec 6, p. 36)
         const byte msgOn[] = {0xF0, 0x00, 0x20, 0x00, 0x00, 0x00, 0x12, 0x33, 0x77, 0x14, 0x04, 0x07, 0x07, 0x0D, 0x00, 0xF7};
         sendSysEx(msgOn, sizeof(msgOn));
       } else { // Mic Boost OFF (Default)
@@ -155,7 +157,8 @@ void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byt
     // --- DEFAULT: Normal Passthrough ---
     default:
       // Forward all other CCs (Volume, Pan, Sustain etc.) 1:1.
-      synth->sendControlChange({controller, channel + 1}, value);
+      // FIX: Explicitly construct MIDIAddress
+      synth->sendControlChange(cs::MIDIAddress(controller, midiChannel), value);
       break;
   }
 }
@@ -163,10 +166,12 @@ void SAM2695_MIDI_Mapper::handleControlChange(byte channel, byte controller, byt
 // --- Passthrough for all other MIDI messages ---
 
 void SAM2695_MIDI_Mapper::handleNoteOn(byte channel, byte note, byte velocity) {
-  synth->sendNoteOn({note, channel + 1}, velocity);
+  // FIX: Explicitly construct MIDIAddress
+  synth->sendNoteOn(cs::MIDIAddress(note, channel + 1), velocity);
 }
 void SAM2695_MIDI_Mapper::handleNoteOff(byte channel, byte note, byte velocity) {
-  synth->sendNoteOff({note, channel + 1}, velocity);
+  // FIX: Explicitly construct MIDIAddress
+  synth->sendNoteOff(cs::MIDIAddress(note, channel + 1), velocity);
 }
 void SAM2695_MIDI_Mapper::handleProgramChange(byte channel, byte program) {
   // NEW: Update our internal state
@@ -174,20 +179,25 @@ void SAM2695_MIDI_Mapper::handleProgramChange(byte channel, byte program) {
   
   // Just forward Program Change. The bank was
   // already set by the CC 32 message.
-  synth->sendProgramChange({channel + 1}, program);
+  // FIX: Use MIDIChannelCable for Program Change
+  synth->sendProgramChange(cs::MIDIChannelCable(channel + 1), program);
 }
 
 void SAM2695_MIDI_Mapper::handlePitchBend(byte channel, int bend) {
-  synth->sendPitchBend({channel + 1}, bend);
+  // FIX: Use MIDIChannelCable and convert signed to unsigned
+  uint16_t unsignedBend = bend + 8192;
+  synth->sendPitchBend(cs::MIDIChannelCable(channel + 1), unsignedBend);
 }
 void SAM2695_MIDI_Mapper::handleAfterTouchPoly(byte channel, byte note, byte pressure) {
-  synth->sendAfterTouchPoly({note, channel + 1}, pressure);
+  // FIX: Correct function name and use explicit MIDIAddress
+  synth->sendPolyphonicAftertouch(cs::MIDIAddress(note, channel + 1), pressure);
 }
 void SAM2695_MIDI_Mapper::handleAfterTouchChannel(byte channel, byte pressure) {
-  synth->sendAfterTouchChannel({channel + 1}, pressure);
+  // FIX: Correct function name and use explicit MIDIChannelCable
+  synth->sendChannelPressure(cs::MIDIChannelCable(channel + 1), pressure);
 }
 void SAM2695_MIDI_Mapper::handleSysEx(const byte *data, size_t length) {
-  // Pass through any other SysEx messages as well
+  // Pass through any SysEx messages
   sendSysEx(data, length);
 }
 
@@ -200,11 +210,12 @@ void SAM2695_MIDI_Mapper::sendNRPN(byte channel, uint16_t parameter, byte value)
   byte midiChannel = channel + 1; // 1-based channels
   byte param_msb = (parameter >> 7) & 0x7F; // Split parameter number
   byte param_lsb = parameter & 0x7F;
-  synth->sendControlChange({99, midiChannel}, param_msb);
-  synth->sendControlChange({98, midiChannel}, param_lsb);
-  synth->sendControlChange({6, midiChannel}, value);
-  synth->sendControlChange({99, midiChannel}, 0x7F); // "Null-terminate" NRPN
-  synth->sendControlChange({98, midiChannel}, 0x7F);
+  // FIX: Explicitly construct MIDIAddress
+  synth->sendControlChange(cs::MIDIAddress(99, midiChannel), param_msb);
+  synth->sendControlChange(cs::MIDIAddress(98, midiChannel), param_lsb);
+  synth->sendControlChange(cs::MIDIAddress(6, midiChannel), value);
+  synth->sendControlChange(cs::MIDIAddress(99, midiChannel), 0x7F); // "Null-terminate" NRPN
+  synth->sendControlChange(cs::MIDIAddress(98, midiChannel), 0x7F);
 }
 
 void SAM2695_MIDI_Mapper::sendSysEx(const byte *data, size_t length) {
@@ -212,9 +223,12 @@ void SAM2695_MIDI_Mapper::sendSysEx(const byte *data, size_t length) {
 }
 
 void SAM2695_MIDI_Mapper::sendGsSysEx(byte addr1, byte addr2, byte addr3, byte value) {
-  // Roland GS SysEx (see SAM2695 Datasheet p. 27+)
+  // Roland GS SysEx for Reverb/Chorus params
+  // F0 41 00 42 12 40 [addr1] [addr2] [addr3] [value] [checksum] F7
+  
   byte sum = 0x40 + addr1 + addr2 + addr3 + value;
   byte checksum = (128 - (sum % 128)) & 0x7F;
+
   byte sysexMsg[] = {
     0xF0, 0x41, 0x00, 0x42, 0x12, // GS Header
     0x40, addr1, addr2, addr3,    // Address
@@ -226,7 +240,7 @@ void SAM2695_MIDI_Mapper::sendGsSysEx(byte addr1, byte addr2, byte addr3, byte v
 }
 
 void SAM2695_MIDI_Mapper::updateEffectModules() {
-  // Send the global effect status (NRPN 375Fh)
-  // This command is global, but sent on channel 1 (index 0).
+  // Send the global effect module state (NRPN 375Fh)
+  // This is a global command, so we can just send it on channel 0
   sendNRPN(0, 0x375F, effectModuleState);
 }

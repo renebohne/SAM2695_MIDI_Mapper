@@ -11,7 +11,7 @@
  * @hardware_setup
  * - ESP32-S3 Board (S3 must be used for native USB-MIDI)
  * - SAM2695 Synthesizer Chip
- * - ESP32 TX-Pin -> SAM2695 MIDI_IN-Pin (via Serial0)
+ * - ESP32 TX-Pin (Serial0) -> SAM2695 MIDI_IN-Pin
  *
  * @arduino_ide_settings_for_esp32s3
  * To use USB-MIDI on the S3, you MUST set the following in the Tools menu:
@@ -39,8 +39,8 @@ BluetoothMIDI_Interface bleMIDI;
 USBMIDI_Interface usbMIDI;
 
 // The interface that talks to the SAM2695 chip
-// (Serial is Serial0 on ESP32, 31250 is the standard MIDI baud rate)
-SerialMIDI_Interface sam_synth = {Serial, 31250}; 
+// (Serial0 is the hardware UART, 31250 is the standard MIDI baud rate)
+SerialMIDI_Interface sam_synth = {Serial0, 31250}; 
 
 // 3. Instantiate the mapper (only ONE)
 // We pass it the interface to the SAM chip, so it can
@@ -63,12 +63,10 @@ void setup() {
   mapper.begin();
   
   // The most important step:
-  // Get the single set of callbacks from the mapper.
-  MIDI_Callbacks translated_callbacks = mapper.getCallbacks();
-  
-  // Attach the SAME callbacks to BOTH input interfaces.
-  bleMIDI.setCallbacks(translated_callbacks);
-  usbMIDI.setCallbacks(translated_callbacks);
+  // Attach the mapper's callbacks to BOTH input interfaces.
+  // This works because getCallbacks() returns a persistent reference.
+  bleMIDI.setCallbacks(mapper.getCallbacks());
+  usbMIDI.setCallbacks(mapper.getCallbacks());
 }
 
 // 5. Loop

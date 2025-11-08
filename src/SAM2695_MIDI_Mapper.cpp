@@ -1,4 +1,5 @@
 #include "SAM2695_MIDI_Mapper.h"
+
 // Initialize the static instance pointer
 SAM2695_MIDI_Mapper *SAM2695_MIDI_Mapper::instance = nullptr;
 
@@ -6,19 +7,12 @@ SAM2695_MIDI_Mapper::SAM2695_MIDI_Mapper(MIDI_Interface &synthInterface)
   : synth(&synthInterface), effectModuleState(0x3B) // 0x3B = Default startup value according to datasheet
 {
   instance = this; // Store the instance for the static callbacks
-  // NEW: Initialize all programs to 0 (Acoustic Grand Piano)
   for (int i = 0; i < 16; ++i) {
     currentProgram[i] = 0;
   }
-}
 
-void SAM2695_MIDI_Mapper::begin() {
-  // Synchronize the ESP32 status with the chip on startup
-  updateEffectModules();
-}
-
-MIDI_Callbacks SAM2695_MIDI_Mapper::getCallbacks() {
-  return {
+  // NEW: Initialize the member callback struct
+  m_callbacks = {
     onNoteOn,
     onNoteOff,
     onAfterTouchPoly,
@@ -28,6 +22,16 @@ MIDI_Callbacks SAM2695_MIDI_Mapper::getCallbacks() {
     onPitchBend,
     onSysEx
   };
+}
+
+void SAM2695_MIDI_Mapper::begin() {
+  // Synchronize the ESP32 status with the chip on startup
+  updateEffectModules();
+}
+
+// CHANGED: Return a reference to the member variable
+MIDI_Callbacks &SAM2695_MIDI_Mapper::getCallbacks() {
+  return m_callbacks; 
 }
 
 // ==================================================================

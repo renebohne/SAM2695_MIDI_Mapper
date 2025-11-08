@@ -188,10 +188,12 @@ void SAM2695_MIDI_Mapper::handlePitchBend(byte channel, int bend) {
   synth->sendPitchBend(cs::MIDIChannelCable(cs::Channel(channel + 1)), unsignedBend);
 }
 void SAM2695_MIDI_Mapper::handleAfterTouchPoly(byte channel, byte note, byte pressure) {
-  // FIX 2 & 3: Correct function name and use explicit MIDIAddress
+  // --- FIX 3: Use correct function name "sendKeyPressure" ---
+  // FIX 2: Explicitly construct MIDIAddress
   synth->sendKeyPressure(cs::MIDIAddress(note, cs::MIDIChannelCable(cs::Channel(channel + 1))), pressure);
 }
 void SAM2695_MIDI_Mapper::handleAfterTouchChannel(byte channel, byte pressure) {
+  // --- FIX 3: Use correct function name "sendChannelPressure" ---
   // FIX 2: Explicitly construct MIDIChannelCable
   synth->sendChannelPressure(cs::MIDIChannelCable(cs::Channel(channel + 1)), pressure);
 }
@@ -207,6 +209,7 @@ void SAM2695_MIDI_Mapper::handleSysEx(const byte *data, size_t length) {
 
 void SAM2695_MIDI_Mapper::sendNRPN(byte channel, uint16_t parameter, byte value) {
   byte midiChannel = channel + 1; // 1-based channels
+  // FIX 2: Explicitly cast the channel byte to cs::Channel
   cs::Channel channelType = cs::Channel(midiChannel);
   byte param_msb = (parameter >> 7) & 0x7F; // Split parameter number
   byte param_lsb = parameter & 0x7F;

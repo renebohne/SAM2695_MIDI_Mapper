@@ -49,7 +49,10 @@ private:
   MIDI_Interface *synth; // Pointer to the SAM2695 interface
   byte effectModuleState; // "Shadow-State" for NRPN 375Fh
   byte currentProgram[16]; // Speichert das aktuelle Programm (0-127) für jeden Kanal
-  // currentBank[16] wird entfernt.
+
+  // Hinzugefügt: Zeitstempel für SysEx-Debouncing
+  unsigned long lastSysExTime = 0;
+  const unsigned long sysExDebounceTime = 20; // Nur alle 20ms einen SysEx-Befehl senden
 };
 
 #endif

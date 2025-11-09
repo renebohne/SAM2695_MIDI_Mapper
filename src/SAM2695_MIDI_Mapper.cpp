@@ -29,10 +29,7 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
       else if (value == 1) synth->sendControlChange(cs::MIDIAddress(0, cs::MIDIChannelCable(channel)), 127); // Bank 2 -> MT-32
       break; 
       
-    // CC 32 (Ableton's "Sub-Bank") wird jetzt automatisch
-    // vom 'default'-Fall behandelt und 1:1 durchgeleitet,
-    // was das korrekte Verhalten ist.
-
+   
     // --- PROGRAM INC/DEC ---
     case 14: // Program Decrement
       if (value >= 64) {
@@ -56,7 +53,7 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
       break;
 
     // --- MASTER & EFFECT MAPPINGS (NRPN) ---
-    // (Diese nutzen sendNRPN, welches die 1ms Delays beibehält)
+    
     case 16: sendNRPN(channel_zero_based, 0x3707, value); break;
     case 17: sendNRPN(channel_zero_based, 0x3724, value); break;
     case 18: sendNRPN(channel_zero_based, 0x3720, value); break;
@@ -149,7 +146,7 @@ void SAM2695_MIDI_Mapper::onSystemExclusive(SysExMessage se) {
 // 5. Private Helper Functions
 // ==================================================================
 
-// --- KORRIGIERTE sendNRPN (behält 1ms Delays für Robustheit) ---
+
 void SAM2695_MIDI_Mapper::sendNRPN(byte channel, uint16_t parameter, byte value) {
   // 'channel' ist hier der 0-basierte Byte-Wert (0-15)
   byte midiChannel = channel + 1; // 1-basierte Kanäle
@@ -157,22 +154,12 @@ void SAM2695_MIDI_Mapper::sendNRPN(byte channel, uint16_t parameter, byte value)
   byte param_msb = (parameter >> 7) & 0x7F;
   byte param_lsb = parameter & 0x7F;
   
-  
-  
+
   synth->sendControlChange(cs::MIDIAddress(99, cs::MIDIChannelCable(channelType)), param_msb);
-  
-  
   synth->sendControlChange(cs::MIDIAddress(98, cs::MIDIChannelCable(channelType)), param_lsb);
-  
-  
   synth->sendControlChange(cs::MIDIAddress(6, cs::MIDIChannelCable(channelType)), value);
-  
-  
   synth->sendControlChange(cs::MIDIAddress(99, cs::MIDIChannelCable(channelType)), 0x7F);
-  
-  
   synth->sendControlChange(cs::MIDIAddress(98, cs::MIDIChannelCable(channelType)), 0x7F);
-  
 }
 
 void SAM2695_MIDI_Mapper::sendSysEx(const byte *data, size_t length) {

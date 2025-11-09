@@ -5,7 +5,6 @@ SAM2695_MIDI_Mapper::SAM2695_MIDI_Mapper(MIDI_Interface &synthInterface)
 {
   for (int i = 0; i < 16; ++i) {
     currentProgram[i] = 0;
-    // currentBank[i] = 0; // Entfernt
   }
 }
 
@@ -21,16 +20,18 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
   byte channel_zero_based = channel.getOneBased() - 1;
 
   switch (controller) {
-    // --- WIEDERHERGESTELLTE BANK-SELECT LOGIK ---
-    case 32: // Bank Select LSB (Ableton-style)
-      // Sendet den CC 0-Befehl SOFORT an den Chip.
+    // --- DEFINITIV KORRIGIERTE BANK-SELECT LOGIK ---
+      
+    case 0:  // Bank Select MSB (Ableton's "Bank" dropdown)
+      // Ableton sendet 0 für Bank 1, 1 für Bank 2, usw.
+      // Wir übersetzen dies in die Werte, die der SAM2695-Chip für CC 0 erwartet.
       if (value == 0)      synth->sendControlChange(cs::MIDIAddress(0, cs::MIDIChannelCable(channel)), 0);   // Bank 1 -> GM
       else if (value == 1) synth->sendControlChange(cs::MIDIAddress(0, cs::MIDIChannelCable(channel)), 127); // Bank 2 -> MT-32
       break; 
       
-    case 0:  // Bank Select MSB (wird blockiert)
-      // Wir blockieren CC 0, da Ableton CC 32 sendet.
-      break; 
+    // CC 32 (Ableton's "Sub-Bank") wird jetzt automatisch
+    // vom 'default'-Fall behandelt und 1:1 durchgeleitet,
+    // was das korrekte Verhalten ist.
 
     // --- PROGRAM INC/DEC ---
     case 14: // Program Decrement
@@ -40,7 +41,6 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
         } else {
           currentProgram[channel_zero_based] = 127; // Wrap
         }
-        // Sendet den PC-Befehl SOFORT (ohne Bank-Info)
         synth->sendProgramChange(cs::MIDIChannelCable(channel), currentProgram[channel_zero_based]);
       }
       break;
@@ -51,7 +51,6 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
         } else {
           currentProgram[channel_zero_based] = 0; // Wrap
         }
-        // Sendet den PC-Befehl SOFORT (ohne Bank-Info)
         synth->sendProgramChange(cs::MIDIChannelCable(channel), currentProgram[channel_zero_based]);
       }
       break;
@@ -108,7 +107,7 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
       break;
 
     default:
-      // Alle anderen CCs 1:1 weiterleiten
+      // Leitet alle anderen CCs 1:1 weiter (inklusive CC 32 "Sub-Bank")
       synth->sendControlChange(cs::MIDIAddress(controller, cs::MIDIChannelCable(channel)), value);
       break;
   }
@@ -123,7 +122,7 @@ void SAM2695_MIDI_Mapper::onNoteOff(Channel channel, uint8_t note, uint8_t veloc
   synth->sendNoteOff(cs::MIDIAddress(note, cs::MIDIChannelCable(channel)), velocity);
 }
 
-// --- WIEDERHERGESTELLTE onProgramChange ---
+// --- KORRIGIERTE onProgramChange (einfacher Passthrough) ---
 void SAM2695_MIDI_Mapper::onProgramChange(Channel channel, uint8_t program, Cable cable) {
   // Speichert das Programm für CC 14/15
   currentProgram[channel.getOneBased() - 1] = program;
@@ -158,22 +157,22 @@ void SAM2695_MIDI_Mapper::sendNRPN(byte channel, uint16_t parameter, byte value)
   byte param_msb = (parameter >> 7) & 0x7F;
   byte param_lsb = parameter & 0x7F;
   
-  // Füge kleine Pausen zwischen den Befehlen ein, um den Chip nicht zu überfordern
+  
   
   synth->sendControlChange(cs::MIDIAddress(99, cs::MIDIChannelCable(channelType)), param_msb);
-  delay(1); // 1ms Pause
+  
   
   synth->sendControlChange(cs::MIDIAddress(98, cs::MIDIChannelCable(channelType)), param_lsb);
-  delay(1); // 1ms Pause
+  
   
   synth->sendControlChange(cs::MIDIAddress(6, cs::MIDIChannelCable(channelType)), value);
-  delay(1); // 1ms Pause
+  
   
   synth->sendControlChange(cs::MIDIAddress(99, cs::MIDIChannelCable(channelType)), 0x7F);
-  delay(1); // 1ms Pause
+  
   
   synth->sendControlChange(cs::MIDIAddress(98, cs::MIDIChannelCable(channelType)), 0x7F);
-  delay(1); // 1ms Pause (optional, aber sauber)
+  
 }
 
 void SAM2695_MIDI_Mapper::sendSysEx(const byte *data, size_t length) {

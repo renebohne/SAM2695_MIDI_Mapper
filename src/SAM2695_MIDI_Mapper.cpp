@@ -49,8 +49,20 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
       }
       break;
 
+    // --- NEU: SYNTHESIZER TVF FILTER (aus Datenblatt SAM2695.pdf) ---
+    case 74: // Standard MIDI CC for Filter Cutoff
+      // Map to NRPN 0120h (TVF cutoff freq modify)
+      // Per datasheet: vv=40h (64) -> no modif
+      sendNRPN(channel_zero_based, 0x0120, value);
+      break;
+        
+    case 71: // Standard MIDI CC for Filter Resonance
+      // Map to NRPN 0121h (TVF resonance modify)
+      // Per datasheet: vv=40h (64) -> no modif
+      sendNRPN(channel_zero_based, 0x0121, value);
+      break;
+
     // --- MASTER & EFFECT MAPPINGS (NRPN) ---
-    // (Diese nutzen sendNRPN, welches die 1ms Delays beibehält)
     case 16: sendNRPN(channel_zero_based, 0x3707, value); break;
     case 17: sendNRPN(channel_zero_based, 0x3724, value); break;
     case 18: sendNRPN(channel_zero_based, 0x3720, value); break;

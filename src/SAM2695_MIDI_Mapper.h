@@ -49,7 +49,7 @@ private:
   MIDI_Interface *synth; // Pointer to the SAM2695 interface
   byte effectModuleState; // "Shadow-State" for NRPN 375Fh
   byte currentProgram[16]; // Speichert das aktuelle Programm (0-127) für jeden Kanal
-  byte currentBank[16];      // Speichert die aktuelle Bank (0 = GM, 127 = MT-32)
+  // currentBank[16] wird entfernt.
 };
 
 #endif

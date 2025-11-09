@@ -5,7 +5,7 @@ SAM2695_MIDI_Mapper::SAM2695_MIDI_Mapper(MIDI_Interface &synthInterface)
 {
   for (int i = 0; i < 16; ++i) {
     currentProgram[i] = 0;
-    currentBank[i] = 0; // Initialisiere alle Kanäle auf Bank 0 (GM)
+    // currentBank[i] = 0; // Entfernt
   }
 }
 
@@ -21,15 +21,15 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
   byte channel_zero_based = channel.getOneBased() - 1;
 
   switch (controller) {
-    // --- KORRIGIERTE BANK-SELECT LOGIK ---
+    // --- WIEDERHERGESTELLTE BANK-SELECT LOGIK ---
     case 32: // Bank Select LSB (Ableton-style)
-      // Die Bank-Auswahl nur speichern, NICHT sofort senden.
-      if (value == 0)      currentBank[channel_zero_based] = 0;   // GM Bank
-      else if (value == 1) currentBank[channel_zero_based] = 127; // MT-32 Bank
+      // Sendet den CC 0-Befehl SOFORT an den Chip.
+      if (value == 0)      synth->sendControlChange(cs::MIDIAddress(0, cs::MIDIChannelCable(channel)), 0);   // Bank 1 -> GM
+      else if (value == 1) synth->sendControlChange(cs::MIDIAddress(0, cs::MIDIChannelCable(channel)), 127); // Bank 2 -> MT-32
       break; 
       
     case 0:  // Bank Select MSB (wird blockiert)
-      // Wir blockieren CC 0, da wir die Bank-Logik selbst steuern
+      // Wir blockieren CC 0, da Ableton CC 32 sendet.
       break; 
 
     // --- PROGRAM INC/DEC ---
@@ -40,8 +40,8 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
         } else {
           currentProgram[channel_zero_based] = 127; // Wrap
         }
-        // Sende Bank UND Programm (nutzt dieselbe Logik wie onProgramChange)
-        onProgramChange(channel, currentProgram[channel_zero_based], cable);
+        // Sendet den PC-Befehl SOFORT (ohne Bank-Info)
+        synth->sendProgramChange(cs::MIDIChannelCable(channel), currentProgram[channel_zero_based]);
       }
       break;
     case 15: // Program Increment
@@ -51,12 +51,13 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
         } else {
           currentProgram[channel_zero_based] = 0; // Wrap
         }
-        // Sende Bank UND Programm (nutzt dieselbe Logik wie onProgramChange)
-        onProgramChange(channel, currentProgram[channel_zero_based], cable);
+        // Sendet den PC-Befehl SOFORT (ohne Bank-Info)
+        synth->sendProgramChange(cs::MIDIChannelCable(channel), currentProgram[channel_zero_based]);
       }
       break;
 
     // --- MASTER & EFFECT MAPPINGS (NRPN) ---
+    // (Diese nutzen sendNRPN, welches die 1ms Delays beibehält)
     case 16: sendNRPN(channel_zero_based, 0x3707, value); break;
     case 17: sendNRPN(channel_zero_based, 0x3724, value); break;
     case 18: sendNRPN(channel_zero_based, 0x3720, value); break;
@@ -88,7 +89,7 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
       updateEffectModules();
       break;
 
-    // --- SYSEX-BASED MAPPINGS (Wahrscheinlich robust, keine Pausen nötig) ---
+    // --- SYSEX-BASED MAPPINGS ---
     case 42: sendGsSysEx(0x01, 0x34, 0x00, value); break;
     case 43: sendGsSysEx(0x01, 0x3D, 0x00, value); break;
     case 44: sendGsSysEx(0x01, 0x3E, 0x00, value); break;
@@ -122,22 +123,13 @@ void SAM2695_MIDI_Mapper::onNoteOff(Channel channel, uint8_t note, uint8_t veloc
   synth->sendNoteOff(cs::MIDIAddress(note, cs::MIDIChannelCable(channel)), velocity);
 }
 
-// --- KORRIGIERTE onProgramChange ---
+// --- WIEDERHERGESTELLTE onProgramChange ---
 void SAM2695_MIDI_Mapper::onProgramChange(Channel channel, uint8_t program, Cable cable) {
-  byte channel_zero_based = channel.getOneBased() - 1;
-  
-  // 1. Das Programm für die CC 14/15-Logik speichern
-  currentProgram[channel_zero_based] = program;
+  // Speichert das Programm für CC 14/15
+  currentProgram[channel.getOneBased() - 1] = program;
 
-  // 2. Sende NUR den Bank-Select MSB (CC 0).
-  //    (currentBank ist 0 für GM, 127 für MT-32)
-  synth->sendControlChange(cs::MIDIAddress(0, cs::MIDIChannelCable(channel)), currentBank[channel_zero_based]);
-
-  // 3. WICHTIG: Gib dem Chip eine robuste Pause (z.B. 20ms), um den Bank-Befehl
-  //    zu verarbeiten, bevor der Programmwechsel eintrifft.
-  delay(20); 
-
-  // 4. DANACH den eigentlichen Programmwechsel-Befehl senden
+  // Leitet den PC-Befehl 1:1 an den Chip weiter.
+  // Der Chip MUSS die Bank-Einstellung (von CC 0) beibehalten haben.
   synth->sendProgramChange(cs::MIDIChannelCable(channel), program);
 }
 
@@ -158,7 +150,7 @@ void SAM2695_MIDI_Mapper::onSystemExclusive(SysExMessage se) {
 // 5. Private Helper Functions
 // ==================================================================
 
-// --- KORRIGIERTE sendNRPN (jetzt robust gegen "Flooding") ---
+// --- KORRIGIERTE sendNRPN (behält 1ms Delays für Robustheit) ---
 void SAM2695_MIDI_Mapper::sendNRPN(byte channel, uint16_t parameter, byte value) {
   // 'channel' ist hier der 0-basierte Byte-Wert (0-15)
   byte midiChannel = channel + 1; // 1-basierte Kanäle
@@ -204,6 +196,5 @@ void SAM2695_MIDI_Mapper::sendGsSysEx(byte addr1, byte addr2, byte addr3, byte v
 
 void SAM2695_MIDI_Mapper::updateEffectModules() {
   // Diese Funktion ruft sendNRPN auf, welche jetzt die Pausen enthält.
-  // Sie ist daher automatisch auch robust.
   sendNRPN(0, 0x375F, effectModuleState);
 }

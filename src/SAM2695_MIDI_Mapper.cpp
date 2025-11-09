@@ -21,19 +21,18 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
   byte channel_zero_based = channel.getOneBased() - 1;
 
   switch (controller) {
-    // --- NEUE BANK-SELECT LOGIK ---
+    // --- KORRIGIERTE BANK-SELECT LOGIK ---
     case 32: // Bank Select LSB (Ableton-style)
       // Die Bank-Auswahl nur speichern, NICHT sofort senden.
-      // Die 'onProgramChange'-Funktion kümmert sich um das Senden.
       if (value == 0)      currentBank[channel_zero_based] = 0;   // GM Bank
       else if (value == 1) currentBank[channel_zero_based] = 127; // MT-32 Bank
       break; 
       
     case 0:  // Bank Select MSB (wird blockiert)
-      // Wir blockieren CC 0, da wir die Bank-Logik jetzt selbst steuern
+      // Wir blockieren CC 0, da wir die Bank-Logik selbst steuern
       break; 
 
-    // --- NEW PROGRAM INC/DEC ---
+    // --- PROGRAM INC/DEC ---
     case 14: // Program Decrement
       if (value >= 64) {
         if (currentProgram[channel_zero_based] > 0) {
@@ -57,34 +56,26 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
       }
       break;
 
-    // --- MASTER & EFFECT MAPPINGS ---
+    // --- MASTER & EFFECT MAPPINGS (NRPN) ---
     case 16: sendNRPN(channel_zero_based, 0x3707, value); break;
     case 17: sendNRPN(channel_zero_based, 0x3724, value); break;
     case 18: sendNRPN(channel_zero_based, 0x3720, value); break;
-      
-    // --- MICROPHONE ECHO MAPPINGS ---
     case 20: sendNRPN(channel_zero_based, 0x3728, value); break;
     case 21: sendNRPN(channel_zero_based, 0x3729, value); break;
     case 22: sendNRPN(channel_zero_based, 0x372A, value); break;
     case 33: sendNRPN(channel_zero_based, 0x3726, value); break;
-
-    // --- 4-BAND EQ GAIN MAPPINGS ---
     case 24: sendNRPN(channel_zero_based, 0x3700, value); break;
     case 25: sendNRPN(channel_zero_based, 0x3701, value); break;
     case 26: sendNRPN(channel_zero_based, 0x3702, value); break;
     case 27: sendNRPN(channel_zero_based, 0x3703, value); break;
-
-    // --- 4-BAND EQ FREQUENCY MAPPINGS ---
     case 28: sendNRPN(channel_zero_based, 0x3708, value); break;
     case 29: sendNRPN(channel_zero_based, 0x3709, value); break;
     case 30: sendNRPN(channel_zero_based, 0x370A, value); break;
     case 31: sendNRPN(channel_zero_based, 0x370B, value); break;
-
-    // --- SPATIAL 3D EFFECT MAPPINGS ---
     case 34: sendNRPN(channel_zero_based, 0x372C, value); break;
     case 35: sendNRPN(channel_zero_based, 0x372D, value); break;
 
-    // --- GLOBAL EFFECT SWITCHES (NRPN 375Fh) ---
+    // --- GLOBAL EFFECT SWITCHES (NRPN) ---
     case 36: bitWrite(effectModuleState, 5, value >= 64); updateEffectModules(); break;
     case 37: bitWrite(effectModuleState, 4, value >= 64); updateEffectModules(); break;
     case 38: bitWrite(effectModuleState, 3, value >= 64); updateEffectModules(); break;
@@ -97,7 +88,7 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
       updateEffectModules();
       break;
 
-    // --- SYSEX-BASED MAPPINGS ---
+    // --- SYSEX-BASED MAPPINGS (Wahrscheinlich robust, keine Pausen nötig) ---
     case 42: sendGsSysEx(0x01, 0x34, 0x00, value); break;
     case 43: sendGsSysEx(0x01, 0x3D, 0x00, value); break;
     case 44: sendGsSysEx(0x01, 0x3E, 0x00, value); break;
@@ -122,7 +113,7 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
   }
 }
 
-// --- Passthrough für alle anderen MIDI-Nachrichten (mit neuen Signaturen) ---
+// --- Passthrough für alle anderen MIDI-Nachrichten ---
 
 void SAM2695_MIDI_Mapper::onNoteOn(Channel channel, uint8_t note, uint8_t velocity, Cable cable) {
   synth->sendNoteOn(cs::MIDIAddress(note, cs::MIDIChannelCable(channel)), velocity);
@@ -131,21 +122,20 @@ void SAM2695_MIDI_Mapper::onNoteOff(Channel channel, uint8_t note, uint8_t veloc
   synth->sendNoteOff(cs::MIDIAddress(note, cs::MIDIChannelCable(channel)), velocity);
 }
 
+// --- KORRIGIERTE onProgramChange ---
 void SAM2695_MIDI_Mapper::onProgramChange(Channel channel, uint8_t program, Cable cable) {
   byte channel_zero_based = channel.getOneBased() - 1;
   
   // 1. Das Programm für die CC 14/15-Logik speichern
   currentProgram[channel_zero_based] = program;
 
-  // --- NEUE TIMING-LOGIK FÜR BANK-WECHSEL ---
-
-  // 2. ZUERST die gespeicherte Bank-Information senden
-  //    (Der SAM2695 nutzt CC 0 für die Bank-Auswahl)
+  // 2. Sende NUR den Bank-Select MSB (CC 0).
+  //    (currentBank ist 0 für GM, 127 für MT-32)
   synth->sendControlChange(cs::MIDIAddress(0, cs::MIDIChannelCable(channel)), currentBank[channel_zero_based]);
 
-  // 3. WICHTIG: Eine kurze Pause einlegen (z.B. 1ms)
-  //    damit der SAM2695-Chip die CC 0-Nachricht verarbeiten kann.
-  delay(1); 
+  // 3. WICHTIG: Gib dem Chip eine robuste Pause (z.B. 20ms), um den Bank-Befehl
+  //    zu verarbeiten, bevor der Programmwechsel eintrifft.
+  delay(20); 
 
   // 4. DANACH den eigentlichen Programmwechsel-Befehl senden
   synth->sendProgramChange(cs::MIDIChannelCable(channel), program);
@@ -165,9 +155,10 @@ void SAM2695_MIDI_Mapper::onSystemExclusive(SysExMessage se) {
 }
 
 // ==================================================================
-// 5. Private Helper Functions (Diese bleiben unverändert)
+// 5. Private Helper Functions
 // ==================================================================
 
+// --- KORRIGIERTE sendNRPN (jetzt robust gegen "Flooding") ---
 void SAM2695_MIDI_Mapper::sendNRPN(byte channel, uint16_t parameter, byte value) {
   // 'channel' ist hier der 0-basierte Byte-Wert (0-15)
   byte midiChannel = channel + 1; // 1-basierte Kanäle
@@ -175,11 +166,22 @@ void SAM2695_MIDI_Mapper::sendNRPN(byte channel, uint16_t parameter, byte value)
   byte param_msb = (parameter >> 7) & 0x7F;
   byte param_lsb = parameter & 0x7F;
   
+  // Füge kleine Pausen zwischen den Befehlen ein, um den Chip nicht zu überfordern
+  
   synth->sendControlChange(cs::MIDIAddress(99, cs::MIDIChannelCable(channelType)), param_msb);
+  delay(1); // 1ms Pause
+  
   synth->sendControlChange(cs::MIDIAddress(98, cs::MIDIChannelCable(channelType)), param_lsb);
+  delay(1); // 1ms Pause
+  
   synth->sendControlChange(cs::MIDIAddress(6, cs::MIDIChannelCable(channelType)), value);
+  delay(1); // 1ms Pause
+  
   synth->sendControlChange(cs::MIDIAddress(99, cs::MIDIChannelCable(channelType)), 0x7F);
+  delay(1); // 1ms Pause
+  
   synth->sendControlChange(cs::MIDIAddress(98, cs::MIDIChannelCable(channelType)), 0x7F);
+  delay(1); // 1ms Pause (optional, aber sauber)
 }
 
 void SAM2695_MIDI_Mapper::sendSysEx(const byte *data, size_t length) {
@@ -201,5 +203,7 @@ void SAM2695_MIDI_Mapper::sendGsSysEx(byte addr1, byte addr2, byte addr3, byte v
 }
 
 void SAM2695_MIDI_Mapper::updateEffectModules() {
+  // Diese Funktion ruft sendNRPN auf, welche jetzt die Pausen enthält.
+  // Sie ist daher automatisch auch robust.
   sendNRPN(0, 0x375F, effectModuleState);
 }

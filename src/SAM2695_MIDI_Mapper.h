@@ -27,8 +27,6 @@ public:
    */
   void begin();
 
-  // getCallbacks() wird entfernt, da die Klasse selbst die Callbacks IST.
-
   // ----- Public Callback Handlers (jetzt mit korrekten Namen und Signaturen) -----
   // Diese überschreiben die Standard-Handler aus der Basisklasse.
   void onNoteOn(Channel channel, uint8_t note, uint8_t velocity, Cable cable);
@@ -51,8 +49,7 @@ private:
   MIDI_Interface *synth; // Pointer to the SAM2695 interface
   byte effectModuleState; // "Shadow-State" for NRPN 375Fh
   byte currentProgram[16]; // Speichert das aktuelle Programm (0-127) für jeden Kanal
-  
-  // m_callbacks wird entfernt.
+  byte currentBank[16];      // Speichert die aktuelle Bank (0 = GM, 127 = MT-32)
 };
 
 #endif

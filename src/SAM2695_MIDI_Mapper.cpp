@@ -143,9 +143,9 @@ void SAM2695_MIDI_Mapper::onProgramChange(Channel channel, uint8_t program, Cabl
   //    (Der SAM2695 nutzt CC 0 für die Bank-Auswahl)
   synth->sendControlChange(cs::MIDIAddress(0, cs::MIDIChannelCable(channel)), currentBank[channel_zero_based]);
 
-  // 3. WICHTIG: Eine kurze Pause einlegen (z.B. 10ms)
+  // 3. WICHTIG: Eine kurze Pause einlegen (z.B. 1ms)
   //    damit der SAM2695-Chip die CC 0-Nachricht verarbeiten kann.
-  delay(10); 
+  delay(1); 
 
   // 4. DANACH den eigentlichen Programmwechsel-Befehl senden
   synth->sendProgramChange(cs::MIDIChannelCable(channel), program);

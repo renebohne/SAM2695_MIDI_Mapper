@@ -12,8 +12,6 @@ SAM2695_MIDI_Mapper::SAM2695_MIDI_Mapper(MIDI_Interface &synthInterface)
   }
 
   // --- Alle Zuweisungen zu m_callbacks werden entfernt ---
-  // m_callbacks.noteOn = onNoteOn; // ENTFERNEN
-  // ...
 }
 
 void SAM2695_MIDI_Mapper::begin() {
@@ -21,19 +19,16 @@ void SAM2695_MIDI_Mapper::begin() {
 }
 
 // Die getCallbacks() Funktion wird komplett entfernt
-// MIDI_Callbacks &SAM2695_MIDI_Mapper::getCallbacks() { ... } // ENTFERNEN
 
 // ==================================================================
 // 4. MIDI-Callback-Handler (Die Übersetzung)
 // ==================================================================
 
-// WICHTIG: 'channel' ist jetzt ein 'Channel'-Objekt, kein 'byte'.
-// Wir verwenden channel.getZeroBased() für Array-Indizes (0-15)
-// und übergeben 'channel' direkt an Control-Surface-Funktionen.
-
 void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, uint8_t value, Cable cable) {
   // Das 'channel'-Objekt kann direkt verwendet werden
-  byte channel_zero_based = channel.getZeroBased();
+  
+  // HIER IST DIE KORREKTUR:
+  byte channel_zero_based = channel.getOneBased() - 1;
 
   switch (controller) {
     case 32: // Bank Select LSB (Ableton-style)
@@ -65,7 +60,7 @@ void SAM2695_MIDI_Mapper::onControlChange(Channel channel, uint8_t controller, u
       break;
 
     // --- MASTER & EFFECT MAPPINGS ---
-    // sendNRPN erwartet einen 0-basierten Kanal-Byte, also verwenden wir getZeroBased()
+    // sendNRPN erwartet einen 0-basierten Kanal-Byte, also verwenden wir channel_zero_based
     case 16: sendNRPN(channel_zero_based, 0x3707, value); break;
     case 17: sendNRPN(channel_zero_based, 0x3724, value); break;
     case 18: sendNRPN(channel_zero_based, 0x3720, value); break;
@@ -139,25 +134,21 @@ void SAM2695_MIDI_Mapper::onNoteOff(Channel channel, uint8_t note, uint8_t veloc
   synth->sendNoteOff(cs::MIDIAddress(note, cs::MIDIChannelCable(channel)), velocity);
 }
 void SAM2695_MIDI_Mapper::onProgramChange(Channel channel, uint8_t program, Cable cable) {
-  currentProgram[channel.getZeroBased()] = program;
+  // HIER IST DIE ZWEITE KORREKTUR:
+  currentProgram[channel.getOneBased() - 1] = program;
   synth->sendProgramChange(cs::MIDIChannelCable(channel), program);
 }
 
 void SAM2695_MIDI_Mapper::onPitchBend(Channel channel, uint16_t bend, Cable cable) {
-  // 'bend' ist bereits der korrekte unsigned 14-Bit-Wert (0-16383)
-  // Deine alte Umrechnung von 'int' ist nicht mehr nötig (und war ein Bug)
   synth->sendPitchBend(cs::MIDIChannelCable(channel), bend);
 }
 void SAM2695_MIDI_Mapper::onKeyPressure(Channel channel, uint8_t note, uint8_t pressure, Cable cable) {
-  // (handleAfterTouchPoly heißt jetzt onKeyPressure)
   synth->sendKeyPressure(cs::MIDIAddress(note, cs::MIDIChannelCable(channel)), pressure);
 }
 void SAM2695_MIDI_Mapper::onChannelPressure(Channel channel, uint8_t pressure, Cable cable) {
-  // (handleAfterTouchChannel heißt jetzt onChannelPressure)
   synth->sendChannelPressure(cs::MIDIChannelCable(channel), pressure);
 }
 void SAM2695_MIDI_Mapper::onSystemExclusive(SysExMessage se) {
-  // se.data ist ein Pointer, se.length ist die Länge
   sendSysEx(se.data, se.length);
 }
 
@@ -178,9 +169,6 @@ void SAM2695_MIDI_Mapper::sendNRPN(byte channel, uint16_t parameter, byte value)
   synth->sendControlChange(cs::MIDIAddress(99, cs::MIDIChannelCable(channelType)), 0x7F);
   synth->sendControlChange(cs::MIDIAddress(98, cs::MIDIChannelCable(channelType)), 0x7F);
 }
-
-// ... sendSysEx, sendGsSysEx, updateEffectModules bleiben identisch ...
-// (Hier zur Vollständigkeit)
 
 void SAM2695_MIDI_Mapper::sendSysEx(const byte *data, size_t length) {
   synth->sendSysEx(data, length);

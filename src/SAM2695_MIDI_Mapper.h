@@ -11,7 +11,8 @@
 
 #include <Control_Surface.h>
 
-class SAM2695_MIDI_Mapper {
+// Die Klasse erbt jetzt direkt von FineGrainedMIDI_Callbacks
+class SAM2695_MIDI_Mapper : public FineGrainedMIDI_Callbacks<SAM2695_MIDI_Mapper> {
 public:
   /**
    * @brief Creates the mapper.
@@ -26,28 +27,22 @@ public:
    */
   void begin();
 
-  /**
-   * @brief Gets the callback structure to be attached to the MIDI input
-   * interface (e.g., BLE-MIDI).
-   * @return A reference to the FineGrainedMIDI_Callbacks structure.
-   */
-  FineGrainedMIDI_Callbacks<SAM2695_MIDI_Mapper> &getCallbacks();
+  // getCallbacks() wird entfernt, da die Klasse selbst die Callbacks IST.
 
-  // ----- Public Callback Handlers -----
-  // These are public so the FineGrainedMIDI_Callbacks struct can call them.
-  // They are the actual implementation of the MIDI handlers.
-  void handleNoteOn(byte channel, byte note, byte velocity);
-  void handleNoteOff(byte channel, byte note, byte velocity);
-  void handleControlChange(byte channel, byte controller, byte value);
-  void handleProgramChange(byte channel, byte program);
-  void handlePitchBend(byte channel, int bend);
-  void handleAfterTouchPoly(byte channel, byte note, byte pressure);
-  void handleAfterTouchChannel(byte channel, byte pressure);
-  void handleSysEx(const byte *data, size_t length);
+  // ----- Public Callback Handlers (jetzt mit korrekten Namen und Signaturen) -----
+  // Diese überschreiben die Standard-Handler aus der Basisklasse.
+  void onNoteOn(Channel channel, uint8_t note, uint8_t velocity, Cable cable);
+  void onNoteOff(Channel channel, uint8_t note, uint8_t velocity, Cable cable);
+  void onControlChange(Channel channel, uint8_t controller, uint8_t value, Cable cable);
+  void onProgramChange(Channel channel, uint8_t program, Cable cable);
+  void onPitchBend(Channel channel, uint16_t bend, Cable cable);
+  void onKeyPressure(Channel channel, uint8_t note, uint8_t pressure, Cable cable);
+  void onChannelPressure(Channel channel, uint8_t pressure, Cable cable);
+  void onSystemExclusive(SysExMessage se);
 
 private:
   // ----- Private Methods (Helpers) -----
-  void sendNRPN(byte channel, uint16_t parameter, byte value);
+  void sendNRPN(byte channel, uint16_t parameter, byte value); // Diese können intern bleiben
   void sendSysEx(const byte *data, size_t length);
   void sendGsSysEx(byte addr1, byte addr2, byte addr3, byte value);
   void updateEffectModules();
@@ -55,10 +50,9 @@ private:
   // ----- Private Members -----
   MIDI_Interface *synth; // Pointer to the SAM2695 interface
   byte effectModuleState; // "Shadow-State" for NRPN 375Fh
-  byte currentProgram[16]; // Stores the current program (0-127) for each channel
+  byte currentProgram[16]; // Speichert das aktuelle Programm (0-127) für jeden Kanal
   
-  // Use the correct, class-based callback structure
-  FineGrainedMIDI_Callbacks<SAM2695_MIDI_Mapper> m_callbacks; 
+  // m_callbacks wird entfernt.
 };
 
 #endif
